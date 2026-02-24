@@ -1,0 +1,15 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "привет",
+      "timestamp": 1771696208.6105828
+    }
+  ],
+  "profile": {},
+  "long_term_memory": {},
+  "meta": {
+    "created": "1771696201.3093052",
+    "last_update": "1771696208.6106167"
+  }
+}

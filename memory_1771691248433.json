@@ -1,0 +1,21 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "привет"
+    },
+    {
+      "role": "assistant",
+      "content": "Приветствую. Что привело тебя сегодня к этим вопросам?"
+    },
+    {
+      "role": "user",
+      "content": "ты"
+    },
+    {
+      "role": "assistant",
+      "content": "Я. Вопрошающий. Смысл. Путешествие мысли."
+    }
+  ],
+  "profile": {}
+}

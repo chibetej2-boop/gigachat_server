@@ -1,0 +1,45 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "привет"
+    },
+    {
+      "role": "assistant",
+      "content": "Приветствую. С чем обращаешься?"
+    },
+    {
+      "role": "user",
+      "content": "меня зовут Алекс",
+      "timestamp": 1771693362.734455
+    },
+    {
+      "role": "assistant",
+      "content": "Рад знакомству, Алекс. Как могу помочь тебе сегодня?",
+      "timestamp": 1771693364.2650402
+    },
+    {
+      "role": "user",
+      "content": "как меня зовут?",
+      "timestamp": 1771693378.0706074
+    },
+    {
+      "role": "assistant",
+      "content": "Тебя зовут Алекс.",
+      "timestamp": 1771693378.6090019
+    }
+  ],
+  "profile": {
+    "name": "?"
+  },
+  "long_term_memory": {
+    "user_name": {
+      "value": "?",
+      "timestamp": 1771693378.0706348
+    }
+  },
+  "meta": {
+    "created": "1771693362.733961",
+    "last_update": "1771693378.6090107"
+  }
+}
