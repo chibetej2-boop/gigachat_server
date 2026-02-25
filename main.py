@@ -34,10 +34,7 @@ class ChatRequest(BaseModel):
 # APP INIT
 # =====================================
 
-app = FastAPI(
-    title="GigaChat Server",
-    version="4.0"
-)
+app = FastAPI(title="GigaChat Server", version="4.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -55,17 +52,13 @@ print("=== GIGACHAT SERVER STARTED (NO STREAM) ===")
 # =====================================
 
 class TokenManager:
-
     def __init__(self):
         self.token = None
         self.expire = 0
 
     async def get_token(self):
-
         if self.token and time.time() < self.expire:
             return self.token
-
-        print("=== FETCH TOKEN ===")
 
         basic_auth = f"{CLIENT_ID}:{CLIENT_SECRET}".encode()
         basic_auth_b64 = base64.b64encode(basic_auth).decode()
@@ -77,15 +70,9 @@ class TokenManager:
             "RqUID": str(uuid.uuid4())
         }
 
-        data = {
-            "scope": "GIGACHAT_API_PERS"
-        }
+        data = {"scope": "GIGACHAT_API_PERS"}
 
-        async with httpx.AsyncClient(
-                verify=False,
-                timeout=30
-        ) as client:
-
+        async with httpx.AsyncClient(verify=False, timeout=30) as client:
             response = await client.post(
                 TOKEN_URL,
                 headers=headers,
@@ -98,8 +85,6 @@ class TokenManager:
         token_json = response.json()
         self.token = token_json["access_token"]
         self.expire = time.time() + 1700
-
-        print("TOKEN OK")
 
         return self.token
 
@@ -124,20 +109,13 @@ async def chat(request: ChatRequest):
     payload = {
         "model": "GigaChat",
         "messages": [
-            {
-                "role": "user",
-                "content": request.message
-            }
+            {"role": "user", "content": request.message}
         ],
         "temperature": 0.7,
         "stream": False
     }
 
-    async with httpx.AsyncClient(
-            verify=False,
-            timeout=60
-    ) as client:
-
+    async with httpx.AsyncClient(verify=False, timeout=60) as client:
         response = await client.post(
             CHAT_URL,
             headers=headers,
@@ -157,9 +135,7 @@ async def chat(request: ChatRequest):
     except:
         content = "Ошибка получения ответа"
 
-    return JSONResponse({
-        "response": content
-    })
+    return JSONResponse({"response": content})
 
 
 # =====================================
@@ -168,7 +144,4 @@ async def chat(request: ChatRequest):
 
 @app.get("/")
 async def root():
-    return {
-        "status": "ok",
-        "server": "gigachat"
-    }
+    return {"status": "ok", "server": "gigachat"}
