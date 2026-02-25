@@ -5,8 +5,9 @@ import uuid
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from typing import Optional
 
 
 # =====================================
@@ -26,13 +27,17 @@ CHAT_URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
 
 class ChatRequest(BaseModel):
     message: str
+    chat_id: Optional[str] = None
 
 
 # =====================================
 # APP INIT
 # =====================================
 
-app = FastAPI()
+app = FastAPI(
+    title="GigaChat Server",
+    version="4.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,7 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("=== GIGACHAT SERVER STARTED ===")
+print("=== GIGACHAT SERVER STARTED (NO STREAM) ===")
 
 
 # =====================================
@@ -55,13 +60,12 @@ class TokenManager:
         self.token = None
         self.expire = 0
 
-
     async def get_token(self):
 
         if self.token and time.time() < self.expire:
             return self.token
 
-        print("\n=== FETCHING NEW TOKEN ===")
+        print("=== FETCH TOKEN ===")
 
         basic_auth = f"{CLIENT_ID}:{CLIENT_SECRET}".encode()
         basic_auth_b64 = base64.b64encode(basic_auth).decode()
@@ -77,27 +81,25 @@ class TokenManager:
             "scope": "GIGACHAT_API_PERS"
         }
 
-        async with httpx.AsyncClient(verify=False, timeout=30) as client:
+        async with httpx.AsyncClient(
+                verify=False,
+                timeout=30
+        ) as client:
 
             response = await client.post(
                 TOKEN_URL,
                 headers=headers,
-                data=data,
+                data=data
             )
-
-        print("TOKEN STATUS:", response.status_code)
-        print("TOKEN BODY:", response.text)
 
         if response.status_code != 200:
             raise Exception("OAuth error")
 
         token_json = response.json()
-
         self.token = token_json["access_token"]
+        self.expire = time.time() + 1700
 
-        self.expire = time.time() + 1800
-
-        print("✅ TOKEN RECEIVED")
+        print("TOKEN OK")
 
         return self.token
 
@@ -106,16 +108,11 @@ token_manager = TokenManager()
 
 
 # =====================================
-# CHAT STREAM
+# CHAT (NO STREAM)
 # =====================================
 
-@app.post("/chat_stream")
-async def chat_stream(request: ChatRequest):
-
-    user_message = request.message
-
-    print("\n=== CHAT REQUEST ===")
-    print("USER:", user_message)
+@app.post("/chat")
+async def chat(request: ChatRequest):
 
     token = await token_manager.get_token()
 
@@ -129,64 +126,39 @@ async def chat_stream(request: ChatRequest):
         "messages": [
             {
                 "role": "user",
-                "content": user_message
+                "content": request.message
             }
         ],
         "temperature": 0.7,
-        "stream": True
+        "stream": False
     }
 
-
-    async def generate():
-
-        async with httpx.AsyncClient(
+    async with httpx.AsyncClient(
             verify=False,
-            timeout=None
-        ) as client:
+            timeout=60
+    ) as client:
 
-            async with client.stream(
-                "POST",
-                CHAT_URL,
-                headers=headers,
-                json=payload
-            ) as response:
+        response = await client.post(
+            CHAT_URL,
+            headers=headers,
+            json=payload
+        )
 
-                print("GIGACHAT STATUS:", response.status_code)
+    if response.status_code != 200:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "GigaChat error"}
+        )
 
-                if response.status_code != 200:
+    result = response.json()
 
-                    error_text = await response.aread()
-
-                    print("❌ GIGACHAT ERROR:", error_text)
-
-                    yield "ERROR"
-
-                    return
-
-
-                async for chunk in response.aiter_text():
-
-                    if not chunk.strip():
-                        continue
-
-                    yield chunk
-
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream"
-    )
-
-
-# =====================================
-# CHAT HISTORY
-# =====================================
-
-@app.post("/chat_history")
-async def chat_history():
+    try:
+        content = result["choices"][0]["message"]["content"]
+    except:
+        content = "Ошибка получения ответа"
 
     return JSONResponse({
-        "messages": []
+        "response": content
     })
 
 
@@ -196,8 +168,7 @@ async def chat_history():
 
 @app.get("/")
 async def root():
-
     return {
         "status": "ok",
         "server": "gigachat"
-    } 
+    }
