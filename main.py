@@ -2,12 +2,14 @@ import time
 import httpx
 import base64
 import uuid
+import os
+import json
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict
 
 
 # =====================================
@@ -26,7 +28,7 @@ CHAT_URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
 # =====================================
 
 class ChatRequest(BaseModel):
-    message: str
+    messages: List[Dict[str, str]]
     chat_id: Optional[str] = None
 
 
@@ -34,7 +36,7 @@ class ChatRequest(BaseModel):
 # APP INIT
 # =====================================
 
-app = FastAPI(title="GigaChat Server", version="4.0")
+app = FastAPI(title="GigaChat Server", version="5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -44,7 +46,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("=== GIGACHAT SERVER STARTED (NO STREAM) ===")
+print("=== GIGACHAT SERVER STARTED (CONTEXT MODE) ===")
 
 
 # =====================================
@@ -93,7 +95,25 @@ token_manager = TokenManager()
 
 
 # =====================================
-# CHAT (NO STREAM)
+# MEMORY STORAGE
+# =====================================
+
+def save_memory(chat_id: str, messages: List[Dict[str, str]]):
+    filename = f"memory_{chat_id}.json"
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(messages, f, ensure_ascii=False, indent=2)
+
+
+def load_memory(chat_id: str):
+    filename = f"memory_{chat_id}.json"
+    if not os.path.exists(filename):
+        return []
+    with open(filename, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+# =====================================
+# CHAT WITH CONTEXT
 # =====================================
 
 @app.post("/chat")
@@ -106,11 +126,16 @@ async def chat(request: ChatRequest):
         "Content-Type": "application/json"
     }
 
+    # если chat_id есть — подгружаем память
+    full_messages = request.messages
+
+    if request.chat_id:
+        previous = load_memory(request.chat_id)
+        full_messages = previous + request.messages
+
     payload = {
         "model": "GigaChat",
-        "messages": [
-            {"role": "user", "content": request.message}
-        ],
+        "messages": full_messages,
         "temperature": 0.7,
         "stream": False
     }
@@ -135,6 +160,13 @@ async def chat(request: ChatRequest):
     except:
         content = "Ошибка получения ответа"
 
+    # сохраняем новую память
+    if request.chat_id:
+        updated_memory = full_messages + [
+            {"role": "assistant", "content": content}
+        ]
+        save_memory(request.chat_id, updated_memory)
+
     return JSONResponse({"response": content})
 
 
@@ -144,4 +176,4 @@ async def chat(request: ChatRequest):
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "server": "gigachat"}
+    return {"status": "ok", "server": "gigachat-context"}
