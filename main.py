@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import List, Dict
+import os
 
 from chat_memory import save_message, load_history
 from providers.gigachat_provider import GigaChatProvider
@@ -24,18 +25,24 @@ class ChatRequest(BaseModel):
 
 app = FastAPI(
     title="AI Server",
-    version="7.0"
+    version="8.0"
 )
+
+# =====================================
+# SECURE CORS CONFIG
+# =====================================
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # позже заменим на фронт
+    allow_origins=[FRONTEND_URL],  # Разрешён только конкретный фронтенд
     allow_credentials=True,
     allow_methods=["POST"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
-print("=== AI SERVER STARTED (EMOTIONAL LAYER ACTIVE) ===")
+print("=== AI SERVER STARTED (SECURE MODE ACTIVE) ===")
 
 
 # =====================================
@@ -78,10 +85,10 @@ async def chat(request: ChatRequest):
     try:
         content = await ai_provider.generate(messages)
 
-    except Exception as e:
+    except Exception:
         return JSONResponse(
             status_code=500,
-            content={"error": str(e)}
+            content={"error": "AI provider error"}
         )
 
     save_message(request.chat_id, "user", request.message)
@@ -116,5 +123,6 @@ async def root():
         "status": "ok",
         "provider": "gigachat",
         "memory": "supabase",
-        "emotional_layer": "active"
+        "emotional_layer": "active",
+        "security": "cors-restricted"
     }
