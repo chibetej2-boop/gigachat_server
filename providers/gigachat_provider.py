@@ -1,5 +1,5 @@
 # gigachat_provider.py
-# SECURE GIGACHAT PROVIDER (ENV VERSION)
+# SECURE GIGACHAT PROVIDER (PRODUCTION SAFE)
 
 import os
 import time
@@ -57,7 +57,6 @@ class GigaChatProvider:
         }
 
         async with httpx.AsyncClient(
-                verify=False,
                 timeout=30
         ) as client:
 
@@ -68,7 +67,7 @@ class GigaChatProvider:
             )
 
         if response.status_code != 200:
-            raise Exception(f"OAuth error: {response.status_code} | {response.text}")
+            raise Exception(f"OAuth error: {response.status_code}")
 
         token_json = response.json()
         self.token = token_json["access_token"]
@@ -98,7 +97,6 @@ class GigaChatProvider:
         }
 
         async with httpx.AsyncClient(
-                verify=False,
                 timeout=60
         ) as client:
 
@@ -109,7 +107,7 @@ class GigaChatProvider:
             )
 
         if response.status_code != 200:
-            raise Exception(f"GigaChat error: {response.status_code} | {response.text}")
+            raise Exception(f"GigaChat error: {response.status_code}")
 
         result = response.json()
 
