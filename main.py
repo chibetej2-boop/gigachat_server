@@ -11,6 +11,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from chat_memory import save_message, load_history
 from providers.gigachat_provider import GigaChatProvider
 from prompt.emotional_state import EmotionalState
+from prompt.sacred_personality import SacredPersonality
 
 
 # =====================================
@@ -26,7 +27,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="AI Server",
-    version="14.0"
+    version="15.0"
 )
 
 app.state.limiter = limiter
@@ -56,7 +57,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("=== AI SERVER STARTED (SYSTEM FIRST FIX) ===")
+print("=== AI SERVER STARTED (SACRED PERSONALITY MODE) ===")
 
 
 # =====================================
@@ -64,6 +65,7 @@ print("=== AI SERVER STARTED (SYSTEM FIRST FIX) ===")
 # =====================================
 
 ai_provider = GigaChatProvider()
+sacred_personality = SacredPersonality()
 
 
 # =====================================
@@ -108,18 +110,26 @@ async def chat(request: Request, x_api_key: str = Header(...)):
     messages: List[Dict[str, str]] = []
 
     # =====================================
-    # SYSTEM MESSAGE FIRST (FIX)
+    # 1️⃣ SACRED PERSONALITY (ALWAYS FIRST)
+    # =====================================
+
+    messages.append(
+        sacred_personality.build_system_message()
+    )
+
+    # =====================================
+    # 2️⃣ EMOTIONAL CONTEXT (SECOND SYSTEM LAYER)
     # =====================================
 
     emotional_state = EmotionalState()
     emotional_state.update_from_text(message)
 
-    system_message = emotional_state.build_context()
-
-    messages.append(system_message)
+    messages.append(
+        emotional_state.build_context()
+    )
 
     # =====================================
-    # HISTORY AFTER SYSTEM
+    # 3️⃣ HISTORY
     # =====================================
 
     for msg in history:
@@ -130,7 +140,7 @@ async def chat(request: Request, x_api_key: str = Header(...)):
             })
 
     # =====================================
-    # USER MESSAGE LAST
+    # 4️⃣ USER MESSAGE (LAST)
     # =====================================
 
     messages.append({
@@ -167,5 +177,5 @@ async def root():
     return {
         "status": "ok",
         "provider": "gigachat",
-        "mode": "android-safe"
+        "mode": "sacred-personality"
     }
