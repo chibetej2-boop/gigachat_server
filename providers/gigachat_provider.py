@@ -1,5 +1,5 @@
 # gigachat_provider.py
-# SECURE GIGACHAT PROVIDER (PRODUCTION SAFE)
+# PRODUCTION VERSION (Render SSL FIX)
 
 import os
 import time
@@ -56,8 +56,10 @@ class GigaChatProvider:
             "scope": "GIGACHAT_API_PERS"
         }
 
+        # 🔥 SSL FIX FOR RENDER
         async with httpx.AsyncClient(
-                timeout=30
+                timeout=30,
+                verify=False
         ) as client:
 
             response = await client.post(
@@ -67,7 +69,7 @@ class GigaChatProvider:
             )
 
         if response.status_code != 200:
-            raise Exception(f"OAuth error: {response.status_code}")
+            raise Exception(f"OAuth error: {response.status_code} - {response.text}")
 
         token_json = response.json()
         self.token = token_json["access_token"]
@@ -96,8 +98,10 @@ class GigaChatProvider:
             "stream": False
         }
 
+        # 🔥 SSL FIX FOR RENDER
         async with httpx.AsyncClient(
-                timeout=60
+                timeout=60,
+                verify=False
         ) as client:
 
             response = await client.post(
@@ -107,7 +111,7 @@ class GigaChatProvider:
             )
 
         if response.status_code != 200:
-            raise Exception(f"GigaChat error: {response.status_code}")
+            raise Exception(f"GigaChat error: {response.status_code} - {response.text}")
 
         result = response.json()
 
