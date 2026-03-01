@@ -1,9 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 from typing import List, Dict
 import os
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
 
 from chat_memory import save_message, load_history
 from providers.gigachat_provider import GigaChatProvider
@@ -11,12 +14,10 @@ from prompt.emotional_state import EmotionalState
 
 
 # =====================================
-# REQUEST MODEL
+# RATE LIMITER
 # =====================================
 
-class ChatRequest(BaseModel):
-    message: str
-    chat_id: str
+limiter = Limiter(key_func=get_remote_address)
 
 
 # =====================================
@@ -25,24 +26,37 @@ class ChatRequest(BaseModel):
 
 app = FastAPI(
     title="AI Server",
-    version="8.0"
+    version="13.0"
 )
 
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+
 # =====================================
-# SECURE CORS CONFIG
+# ENV SECURITY
 # =====================================
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "*")
+SERVER_API_KEY = os.getenv("SERVER_API_KEY")
+
+if not SERVER_API_KEY:
+    raise RuntimeError("SERVER_API_KEY not set in environment")
+
+
+# =====================================
+# CORS
+# =====================================
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL],  # Разрешён только конкретный фронтенд
+    allow_origins=[FRONTEND_URL] if FRONTEND_URL != "*" else ["*"],
     allow_credentials=True,
-    allow_methods=["POST"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-print("=== AI SERVER STARTED (SECURE MODE ACTIVE) ===")
+print("=== AI SERVER STARTED (SAFE MODE) ===")
 
 
 # =====================================
@@ -53,33 +67,60 @@ ai_provider = GigaChatProvider()
 
 
 # =====================================
+# SECURITY CHECK
+# =====================================
+
+def verify_api_key(x_api_key: str):
+    if x_api_key != SERVER_API_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+# =====================================
 # CHAT
 # =====================================
 
 @app.post("/chat")
-async def chat(request: ChatRequest):
+@limiter.limit("20/minute")
+async def chat(request: Request, x_api_key: str = Header(...)):
 
-    history = load_history(request.chat_id)
+    verify_api_key(x_api_key)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Invalid JSON"}
+        )
+
+    message = body.get("message")
+
+    if not message:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Message field required"}
+        )
+
+    chat_id = "default_user"
+
+    history = load_history(chat_id)
 
     messages: List[Dict[str, str]] = []
 
-    # ===== LOAD HISTORY =====
     for msg in history:
         messages.append({
             "role": msg["role"],
             "content": msg["content"]
         })
 
-    # ===== EMOTIONAL LAYER =====
     emotional_state = EmotionalState()
-    emotional_state.update_from_text(request.message)
+    emotional_state.update_from_text(message)
 
     messages.append(emotional_state.build_context())
 
-    # ===== USER MESSAGE =====
     messages.append({
         "role": "user",
-        "content": request.message
+        "content": message
     })
 
     try:
@@ -91,25 +132,11 @@ async def chat(request: ChatRequest):
             content={"error": "AI provider error"}
         )
 
-    save_message(request.chat_id, "user", request.message)
-    save_message(request.chat_id, "assistant", content)
+    save_message(chat_id, "user", message)
+    save_message(chat_id, "assistant", content)
 
     return JSONResponse({
         "response": content
-    })
-
-
-# =====================================
-# CHAT HISTORY
-# =====================================
-
-@app.post("/chat_history")
-async def chat_history(request: ChatRequest):
-
-    history = load_history(request.chat_id)
-
-    return JSONResponse({
-        "messages": history
     })
 
 
@@ -122,7 +149,5 @@ async def root():
     return {
         "status": "ok",
         "provider": "gigachat",
-        "memory": "supabase",
-        "emotional_layer": "active",
-        "security": "cors-restricted"
+        "mode": "flutter-safe"
     }
