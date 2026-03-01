@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import List, Dict
 import os
+import traceback
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -26,7 +27,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="AI Server",
-    version="13.0"
+    version="14.0-debug"
 )
 
 app.state.limiter = limiter
@@ -43,6 +44,8 @@ SERVER_API_KEY = os.getenv("SERVER_API_KEY")
 if not SERVER_API_KEY:
     raise RuntimeError("SERVER_API_KEY not set in environment")
 
+print("SERVER_API_KEY loaded:", SERVER_API_KEY[:5], "*****")
+
 
 # =====================================
 # CORS
@@ -56,7 +59,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("=== AI SERVER STARTED (SAFE MODE) ===")
+print("=== AI SERVER STARTED (DEBUG MODE) ===")
 
 
 # =====================================
@@ -87,7 +90,8 @@ async def chat(request: Request, x_api_key: str = Header(...)):
 
     try:
         body = await request.json()
-    except Exception:
+    except Exception as e:
+        print("JSON ERROR:", str(e))
         return JSONResponse(
             status_code=400,
             content={"error": "Invalid JSON"}
@@ -126,10 +130,18 @@ async def chat(request: Request, x_api_key: str = Header(...)):
     try:
         content = await ai_provider.generate(messages)
 
-    except Exception:
+    except Exception as e:
+        print("=== AI PROVIDER CRASH ===")
+        print("ERROR:", str(e))
+        print("TRACEBACK:")
+        traceback.print_exc()
+
         return JSONResponse(
             status_code=500,
-            content={"error": "AI provider error"}
+            content={
+                "error": "AI provider error",
+                "details": str(e)
+            }
         )
 
     save_message(chat_id, "user", message)
@@ -149,5 +161,5 @@ async def root():
     return {
         "status": "ok",
         "provider": "gigachat",
-        "mode": "flutter-safe"
+        "mode": "debug"
     }
