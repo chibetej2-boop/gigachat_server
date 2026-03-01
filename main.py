@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import List, Dict
 import os
-import traceback
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -27,7 +26,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="AI Server",
-    version="14.0-debug"
+    version="14.0"
 )
 
 app.state.limiter = limiter
@@ -44,8 +43,6 @@ SERVER_API_KEY = os.getenv("SERVER_API_KEY")
 if not SERVER_API_KEY:
     raise RuntimeError("SERVER_API_KEY not set in environment")
 
-print("SERVER_API_KEY loaded:", SERVER_API_KEY[:5], "*****")
-
 
 # =====================================
 # CORS
@@ -59,7 +56,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("=== AI SERVER STARTED (DEBUG MODE) ===")
+print("=== AI SERVER STARTED (SYSTEM FIRST FIX) ===")
 
 
 # =====================================
@@ -90,8 +87,7 @@ async def chat(request: Request, x_api_key: str = Header(...)):
 
     try:
         body = await request.json()
-    except Exception as e:
-        print("JSON ERROR:", str(e))
+    except Exception:
         return JSONResponse(
             status_code=400,
             content={"error": "Invalid JSON"}
@@ -111,16 +107,31 @@ async def chat(request: Request, x_api_key: str = Header(...)):
 
     messages: List[Dict[str, str]] = []
 
-    for msg in history:
-        messages.append({
-            "role": msg["role"],
-            "content": msg["content"]
-        })
+    # =====================================
+    # SYSTEM MESSAGE FIRST (FIX)
+    # =====================================
 
     emotional_state = EmotionalState()
     emotional_state.update_from_text(message)
 
-    messages.append(emotional_state.build_context())
+    system_message = emotional_state.build_context()
+
+    messages.append(system_message)
+
+    # =====================================
+    # HISTORY AFTER SYSTEM
+    # =====================================
+
+    for msg in history:
+        if msg["role"] != "system":
+            messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+
+    # =====================================
+    # USER MESSAGE LAST
+    # =====================================
 
     messages.append({
         "role": "user",
@@ -131,11 +142,6 @@ async def chat(request: Request, x_api_key: str = Header(...)):
         content = await ai_provider.generate(messages)
 
     except Exception as e:
-        print("=== AI PROVIDER CRASH ===")
-        print("ERROR:", str(e))
-        print("TRACEBACK:")
-        traceback.print_exc()
-
         return JSONResponse(
             status_code=500,
             content={
@@ -161,5 +167,5 @@ async def root():
     return {
         "status": "ok",
         "provider": "gigachat",
-        "mode": "debug"
+        "mode": "android-safe"
     }
