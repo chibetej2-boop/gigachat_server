@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import List, Dict
 import os
+import traceback
 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -14,40 +15,18 @@ from prompt.emotional_state import EmotionalState
 from prompt.sacred_personality import SacredPersonality
 
 
-# =====================================
-# RATE LIMITER
-# =====================================
-
 limiter = Limiter(key_func=get_remote_address)
 
-
-# =====================================
-# APP INIT
-# =====================================
-
-app = FastAPI(
-    title="AI Server",
-    version="15.0"
-)
+app = FastAPI(title="AI Server", version="15.1-debug")
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
-
-
-# =====================================
-# ENV SECURITY
-# =====================================
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "*")
 SERVER_API_KEY = os.getenv("SERVER_API_KEY")
 
 if not SERVER_API_KEY:
     raise RuntimeError("SERVER_API_KEY not set in environment")
-
-
-# =====================================
-# CORS
-# =====================================
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,125 +36,76 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("=== AI SERVER STARTED (SACRED PERSONALITY MODE) ===")
-
-
-# =====================================
-# PROVIDER INIT
-# =====================================
+print("=== AI SERVER STARTED (DEBUG MODE) ===")
 
 ai_provider = GigaChatProvider()
 sacred_personality = SacredPersonality()
 
-
-# =====================================
-# SECURITY CHECK
-# =====================================
 
 def verify_api_key(x_api_key: str):
     if x_api_key != SERVER_API_KEY:
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
-# =====================================
-# CHAT
-# =====================================
-
 @app.post("/chat")
 @limiter.limit("20/minute")
 async def chat(request: Request, x_api_key: str = Header(...)):
 
-    verify_api_key(x_api_key)
-
     try:
+        verify_api_key(x_api_key)
+
         body = await request.json()
-    except Exception:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Invalid JSON"}
-        )
+        message = body.get("message")
 
-    message = body.get("message")
+        if not message:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Message field required"}
+            )
 
-    if not message:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Message field required"}
-        )
+        chat_id = "default_user"
+        history = load_history(chat_id)
 
-    chat_id = "default_user"
+        messages: List[Dict[str, str]] = []
 
-    history = load_history(chat_id)
+        messages.append(sacred_personality.build_system_message())
 
-    messages: List[Dict[str, str]] = []
+        emotional_state = EmotionalState()
+        emotional_state.update_from_text(message)
+        messages.append(emotional_state.build_context())
 
-    # =====================================
-    # 1️⃣ SACRED PERSONALITY (ALWAYS FIRST)
-    # =====================================
+        for msg in history:
+            if msg["role"] != "system":
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
 
-    messages.append(
-        sacred_personality.build_system_message()
-    )
+        messages.append({
+            "role": "user",
+            "content": message
+        })
 
-    # =====================================
-    # 2️⃣ EMOTIONAL CONTEXT (SECOND SYSTEM LAYER)
-    # =====================================
-
-    emotional_state = EmotionalState()
-    emotional_state.update_from_text(message)
-
-    messages.append(
-        emotional_state.build_context()
-    )
-
-    # =====================================
-    # 3️⃣ HISTORY
-    # =====================================
-
-    for msg in history:
-        if msg["role"] != "system":
-            messages.append({
-                "role": msg["role"],
-                "content": msg["content"]
-            })
-
-    # =====================================
-    # 4️⃣ USER MESSAGE (LAST)
-    # =====================================
-
-    messages.append({
-        "role": "user",
-        "content": message
-    })
-
-    try:
         content = await ai_provider.generate(messages)
 
+        save_message(chat_id, "user", message)
+        save_message(chat_id, "assistant", content)
+
+        return JSONResponse({"response": content})
+
     except Exception as e:
+        print("🔥 CHAT CRASH:")
+        traceback.print_exc()
         return JSONResponse(
             status_code=500,
-            content={
-                "error": "AI provider error",
-                "details": str(e)
-            }
+            content={"error": str(e)}
         )
 
-    save_message(chat_id, "user", message)
-    save_message(chat_id, "assistant", content)
-
-    return JSONResponse({
-        "response": content
-    })
-
-
-# =====================================
-# ROOT
-# =====================================
 
 @app.get("/")
 async def root():
     return {
         "status": "ok",
         "provider": "gigachat",
-        "mode": "sacred-personality"
+        "mode": "debug"
     }
