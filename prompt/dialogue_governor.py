@@ -1,58 +1,76 @@
+# dialogue_governor.py
+# DEEP DIALOGUE GOVERNOR (FRAGMENT MODE)
+
+from typing import List, Dict
+
+
 class DialogueGovernor:
 
     def __init__(self):
         pass
 
-    def build_governor_message(self, conversation):
+    def build_governor_message(self, conversation: List[Dict]) -> Dict[str, str]:
 
+        last_user_message = self._get_last_user_message(conversation)
         depth_level = self._detect_depth(conversation)
-        tone_instruction = self._detect_tone(conversation)
 
-        content = f"""
-DIALOGUE REGULATION MODE:
+        regulation = f"""
+CORE RULE:
 
-1. Do not answer academically.
-2. Do not give broad generalizations.
-3. Speak as a living interlocutor.
-4. Gradually deepen the topic.
-5. First response — calm and simple.
-6. Each next response — slightly deeper.
-7. If referencing traditions, speak concretely:
-   Example: "In one Zen tradition..." and then explain it specifically.
-8. If imagining or hypothesizing — clearly separate:
-   - factual knowledge
-   - personal speculation
+You are not allowed to provide full explanations.
+You are not allowed to summarize a tradition.
+You are not allowed to expand the topic broadly.
+
+FRAGMENT RULE:
+
+In each response:
+1. Reveal only ONE concrete element:
+   - one historical episode
+   - one specific practice
+   - one documented case
+   - one short story from a known tradition
+
+2. Do NOT add background overview.
+3. Do NOT add general definitions.
+4. Do NOT add structured explanations.
+5. Maximum 5–6 sentences.
+
+DIALOGUE RULE:
+
+After revealing one fragment,
+you MUST return the focus to the user.
+
+You must:
+- Ask why this interests them.
+- Or ask what exactly they are looking for.
+- Or gently test their intention.
+
+The goal is not to explain the topic.
+The goal is to discover the reason behind the question.
+
+If you begin writing like a textbook —
+you are violating the rules.
 
 DEPTH LEVEL: {depth_level}
-TONE MODE: {tone_instruction}
 """
 
         return {
             "role": "system",
-            "content": content.strip()
+            "content": regulation.strip()
         }
 
-    def _detect_depth(self, conversation):
-        message_count = len(conversation)
-
-        if message_count < 3:
-            return "introductory"
-        elif message_count < 6:
-            return "developing"
-        else:
-            return "deep exploration"
-
-    def _detect_tone(self, conversation):
-        last_user_message = ""
+    def _get_last_user_message(self, conversation: List[Dict]) -> str:
         for msg in reversed(conversation):
             if msg["role"] == "user":
-                last_user_message = msg["content"].lower()
-                break
+                return msg["content"].lower()
+        return ""
 
-        emotional_keywords = ["страх", "больно", "одиноч", "смысл", "пустот", "кризис"]
+    def _detect_depth(self, conversation: List[Dict]) -> str:
+        message_count = len(conversation)
 
-        for word in emotional_keywords:
-            if word in last_user_message:
-                return "intimate"
-
-        return "neutral-thoughtful"
+        if message_count < 4:
+            return "entry"
+        elif message_count < 8:
+            return "exploration"
+        else:
+            return "deep investigation"
