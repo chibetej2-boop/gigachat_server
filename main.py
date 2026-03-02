@@ -13,11 +13,12 @@ from chat_memory import save_message, load_history
 from providers.gigachat_provider import GigaChatProvider
 from prompt.emotional_state import EmotionalState
 from prompt.sacred_personality import SacredPersonality
+from prompt.dialogue_governor import DialogueGovernor
 
 
 limiter = Limiter(key_func=get_remote_address)
 
-app = FastAPI(title="AI Server", version="16.0-fixed")
+app = FastAPI(title="AI Server", version="17.0-governor-integrated")
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
@@ -36,10 +37,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("=== AI SERVER STARTED (SYSTEM ORDER FIX) ===")
+print("=== AI SERVER STARTED (GOVERNOR MODE) ===")
 
 ai_provider = GigaChatProvider()
 sacred_personality = SacredPersonality()
+dialogue_governor = DialogueGovernor()
 
 
 def verify_api_key(x_api_key: str):
@@ -77,8 +79,18 @@ async def chat(request: Request, x_api_key: str = Header(...)):
         emotional_state = EmotionalState()
         emotional_state.update_from_text(message)
 
-        # Добавляем эмоциональный контекст ВНУТРЬ system
+        # Добавляем эмоциональный контекст
         system_message["content"] += "\n\n" + emotional_state.build_context()["content"]
+
+        # ==============================
+        # GOVERNOR (SOFT INTEGRATION)
+        # ==============================
+
+        governor_message = dialogue_governor.build_governor_message(history + [{"role": "user", "content": message}])
+
+        # ВАЖНО: не создаём второй system.
+        # Добавляем инструкции внутрь основного system.
+        system_message["content"] += "\n\n" + governor_message["content"]
 
         messages.append(system_message)
 
@@ -123,5 +135,5 @@ async def root():
     return {
         "status": "ok",
         "provider": "gigachat",
-        "mode": "system-order-fixed"
+        "mode": "governor-integrated"
     }
