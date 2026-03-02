@@ -17,7 +17,7 @@ from prompt.sacred_personality import SacredPersonality
 
 limiter = Limiter(key_func=get_remote_address)
 
-app = FastAPI(title="AI Server", version="15.1-debug")
+app = FastAPI(title="AI Server", version="16.0-fixed")
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
@@ -36,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("=== AI SERVER STARTED (DEBUG MODE) ===")
+print("=== AI SERVER STARTED (SYSTEM ORDER FIX) ===")
 
 ai_provider = GigaChatProvider()
 sacred_personality = SacredPersonality()
@@ -68,11 +68,23 @@ async def chat(request: Request, x_api_key: str = Header(...)):
 
         messages: List[Dict[str, str]] = []
 
-        messages.append(sacred_personality.build_system_message())
+        # ==============================
+        # SYSTEM MESSAGE (ONLY ONE!)
+        # ==============================
+
+        system_message = sacred_personality.build_system_message()
 
         emotional_state = EmotionalState()
         emotional_state.update_from_text(message)
-        messages.append(emotional_state.build_context())
+
+        # Добавляем эмоциональный контекст ВНУТРЬ system
+        system_message["content"] += "\n\n" + emotional_state.build_context()["content"]
+
+        messages.append(system_message)
+
+        # ==============================
+        # HISTORY
+        # ==============================
 
         for msg in history:
             if msg["role"] != "system":
@@ -80,6 +92,10 @@ async def chat(request: Request, x_api_key: str = Header(...)):
                     "role": msg["role"],
                     "content": msg["content"]
                 })
+
+        # ==============================
+        # USER MESSAGE
+        # ==============================
 
         messages.append({
             "role": "user",
@@ -107,5 +123,5 @@ async def root():
     return {
         "status": "ok",
         "provider": "gigachat",
-        "mode": "debug"
+        "mode": "system-order-fixed"
     }
