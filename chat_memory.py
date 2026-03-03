@@ -1,9 +1,8 @@
 # chat_memory.py
-# ARKANUM MEMORY v5 (MULTI-CHAT MODE)
+# ARKANUM MEMORY v8 (FORCED RETURN + DEBUG SAFE)
 
 from db import supabase
 import traceback
-import uuid
 from datetime import datetime
 
 
@@ -20,15 +19,21 @@ MAX_CONTEXT_MESSAGES = 30
 
 def create_chat(title: str = "New Chat") -> str:
     try:
-        chat_id = str(uuid.uuid4())
+        response = supabase.table("chats").insert(
+            {"title": title},
+            returning="representation"  # принудительно вернуть созданную строку
+        ).execute()
 
-        supabase.table("chats").insert({
-            "chat_id": chat_id,
-            "title": title,
-            "created_at": datetime.utcnow().isoformat()
-        }).execute()
+        print("=== RAW INSERT RESPONSE ===")
+        print(response)
 
-        return chat_id
+        data = response.data
+
+        if data and len(data) > 0 and "id" in data[0]:
+            return data[0]["id"]
+
+        print("=== INSERT RETURNED NO ID ===")
+        return None
 
     except Exception as e:
         print("=== CREATE CHAT ERROR ===")
@@ -67,7 +72,7 @@ def get_all_chats():
 def delete_chat(chat_id: str):
     try:
         supabase.table("chat_memory").delete().eq("chat_id", chat_id).execute()
-        supabase.table("chats").delete().eq("chat_id", chat_id).execute()
+        supabase.table("chats").delete().eq("id", chat_id).execute()
 
     except Exception as e:
         print("=== DELETE CHAT ERROR ===")
@@ -80,13 +85,11 @@ def delete_chat(chat_id: str):
 # ==========================================
 
 def save_message(chat_id: str, role: str, content: str):
-
     try:
         supabase.table("chat_memory").insert({
             "chat_id": chat_id,
             "role": role,
-            "content": content,
-            "created_at": datetime.utcnow().isoformat()
+            "content": content
         }).execute()
 
     except Exception as e:
@@ -100,7 +103,6 @@ def save_message(chat_id: str, role: str, content: str):
 # ==========================================
 
 def load_history(chat_id: str):
-
     try:
         response = (
             supabase
