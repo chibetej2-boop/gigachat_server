@@ -9,7 +9,14 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.middleware import SlowAPIMiddleware
 
-from chat_memory import save_message, load_history
+from chat_memory import (
+    save_message,
+    load_history,
+    create_chat,
+    get_all_chats,
+    delete_chat
+)
+
 from providers.gigachat_provider import GigaChatProvider
 from prompt.emotional_state import EmotionalState
 from prompt.sacred_personality import SacredPersonality
@@ -18,7 +25,7 @@ from prompt.dialogue_governor import DialogueGovernor
 
 limiter = Limiter(key_func=get_remote_address)
 
-app = FastAPI(title="AI Server", version="17.0-governor-integrated")
+app = FastAPI(title="AI Server", version="18.0-multi-chat")
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
@@ -37,7 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("=== AI SERVER STARTED (GOVERNOR MODE) ===")
+print("=== AI SERVER STARTED (MULTI-CHAT MODE) ===")
 
 ai_provider = GigaChatProvider()
 sacred_personality = SacredPersonality()
@@ -49,6 +56,10 @@ def verify_api_key(x_api_key: str):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
+# =========================================================
+# CHAT
+# =========================================================
+
 @app.post("/chat")
 @limiter.limit("20/minute")
 async def chat(request: Request, x_api_key: str = Header(...)):
@@ -58,6 +69,7 @@ async def chat(request: Request, x_api_key: str = Header(...)):
 
         body = await request.json()
         message = body.get("message")
+        chat_id = body.get("chat_id", "default_user")
 
         if not message:
             return JSONResponse(
@@ -65,39 +77,27 @@ async def chat(request: Request, x_api_key: str = Header(...)):
                 content={"error": "Message field required"}
             )
 
-        chat_id = "default_user"
         history = load_history(chat_id)
 
         messages: List[Dict[str, str]] = []
 
-        # ==============================
-        # SYSTEM MESSAGE (ONLY ONE!)
-        # ==============================
-
+        # SYSTEM MESSAGE
         system_message = sacred_personality.build_system_message()
 
         emotional_state = EmotionalState()
         emotional_state.update_from_text(message)
 
-        # Добавляем эмоциональный контекст
         system_message["content"] += "\n\n" + emotional_state.build_context()["content"]
 
-        # ==============================
-        # GOVERNOR (SOFT INTEGRATION)
-        # ==============================
+        governor_message = dialogue_governor.build_governor_message(
+            history + [{"role": "user", "content": message}]
+        )
 
-        governor_message = dialogue_governor.build_governor_message(history + [{"role": "user", "content": message}])
-
-        # ВАЖНО: не создаём второй system.
-        # Добавляем инструкции внутрь основного system.
         system_message["content"] += "\n\n" + governor_message["content"]
 
         messages.append(system_message)
 
-        # ==============================
         # HISTORY
-        # ==============================
-
         for msg in history:
             if msg["role"] != "system":
                 messages.append({
@@ -105,10 +105,7 @@ async def chat(request: Request, x_api_key: str = Header(...)):
                     "content": msg["content"]
                 })
 
-        # ==============================
         # USER MESSAGE
-        # ==============================
-
         messages.append({
             "role": "user",
             "content": message
@@ -119,7 +116,10 @@ async def chat(request: Request, x_api_key: str = Header(...)):
         save_message(chat_id, "user", message)
         save_message(chat_id, "assistant", content)
 
-        return JSONResponse({"response": content})
+        return JSONResponse({
+            "response": content,
+            "chat_id": chat_id
+        })
 
     except Exception as e:
         print("🔥 CHAT CRASH:")
@@ -130,10 +130,89 @@ async def chat(request: Request, x_api_key: str = Header(...)):
         )
 
 
+# =========================================================
+# CREATE NEW CHAT
+# =========================================================
+
+@app.post("/chats")
+async def create_new_chat(x_api_key: str = Header(...)):
+
+    try:
+        verify_api_key(x_api_key)
+
+        chat_id = create_chat("New Chat")
+
+        return JSONResponse({
+            "chat_id": chat_id
+        })
+
+    except Exception as e:
+        print("🔥 CREATE CHAT CRASH:")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+
+# =========================================================
+# GET ALL CHATS
+# =========================================================
+
+@app.get("/chats")
+async def get_chats(x_api_key: str = Header(...)):
+
+    try:
+        verify_api_key(x_api_key)
+
+        chats = get_all_chats()
+
+        return JSONResponse({
+            "chats": chats
+        })
+
+    except Exception as e:
+        print("🔥 GET CHATS CRASH:")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+
+# =========================================================
+# DELETE CHAT
+# =========================================================
+
+@app.delete("/chats/{chat_id}")
+async def remove_chat(chat_id: str, x_api_key: str = Header(...)):
+
+    try:
+        verify_api_key(x_api_key)
+
+        delete_chat(chat_id)
+
+        return JSONResponse({
+            "status": "deleted"
+        })
+
+    except Exception as e:
+        print("🔥 DELETE CHAT CRASH:")
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+
+# =========================================================
+# ROOT
+# =========================================================
+
 @app.get("/")
 async def root():
     return {
         "status": "ok",
         "provider": "gigachat",
-        "mode": "governor-integrated"
+        "mode": "multi-chat-enabled"
     }
